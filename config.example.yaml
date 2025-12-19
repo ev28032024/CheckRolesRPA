@@ -1,0 +1,34 @@
+# Пример конфигурационного файла
+# Скопируйте этот файл в config.yaml и заполните своими данными
+
+# Google Sheets настройки
+google_sheets:
+  sheets_id: "your_google_sheets_id_here"  # ID вашей Google таблицы
+  credentials_file: "credentials.json"  # Путь к файлу с credentials
+  # Названия листов в Google таблице (можно настроить под свои названия)
+  sheet_ds_data: "ds_data"  # Страница для данных профиля
+  sheet_ds_link: "ds_link"  # Страница для ссылок на Discord каналы
+  sheet_check: "чек-отработка"  # Страница для чек-отработки
+
+# ADSpower API настройки
+adspower:
+  api_url: "http://local.adspower.net:50325"  # URL ADSpower API
+  api_key: ""  # API ключ (опционально, для локального API обычно не требуется)
+
+# Discord настройки
+discord:
+  timeout: 30  # Таймаут для операций в секундах
+  wait_time: 3  # Время ожидания между действиями
+
+# Многопоточность
+threading:
+  enabled: false  # Включить многопоточный режим
+  max_workers: 2  # Максимальное количество потоков (рекомендуется 2-4)
+  # Примечание: Каждый поток использует отдельный профиль ADSpower
+  # Убедитесь, что у вас достаточно профилей в таблице ds_data
+
+# Логирование
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "checker.log"  # Имя файла для логов
+
