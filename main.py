@@ -274,6 +274,9 @@ class RolesChecker:
         """
         Загрузка данных для проверки из Google Sheets
         
+        Никнеймы для проверки берутся из листа ds_data.
+        Лист чек-отработка используется только для записи результатов.
+        
         Returns:
             Кортеж (server_urls, usernames, check_profiles)
         
@@ -287,23 +290,28 @@ class RolesChecker:
                 logger.warning("Ссылки на серверы не найдены")
                 return [], [], []
             
-            # Получаем список пользователей для проверки
+            # Получаем список никнеймов для проверки из ds_data
             try:
-                check_profiles = self.sheets_client.get_check_profiles()
+                usernames = self.sheets_client.get_usernames_from_ds_data()
             except GoogleSheetsError as e:
-                logger.error(f"Ошибка получения профилей для проверки: {e}")
+                logger.error(f"Ошибка получения никнеймов из ds_data: {e}")
                 raise
             
-            if not check_profiles:
-                logger.warning("Профили для проверки не найдены")
+            if not usernames:
+                logger.warning("Никнеймы для проверки не найдены в ds_data")
                 return server_urls, [], []
             
-            # Извлекаем username из профилей для проверки
-            usernames = self._extract_usernames(check_profiles)
-            if not usernames:
-                logger.warning("Username для проверки не найдены")
-                return server_urls, [], check_profiles
+            # Получаем профили из ds_data для сохранения результатов
+            # (содержат username и serial_number для записи в чек-отработка)
+            try:
+                check_profiles = self.sheets_client.get_check_profiles_from_ds_data()
+            except GoogleSheetsError as e:
+                logger.error(f"Ошибка получения профилей из ds_data для сохранения: {e}")
+                # Продолжаем работу даже если не удалось получить профили для сохранения
+                # Создаем минимальные профили только с username
+                check_profiles = [{'username': username} for username in usernames]
             
+            logger.info(f"Найдено {len(usernames)} никнеймов для проверки из ds_data")
             return server_urls, usernames, check_profiles
         
         except GoogleSheetsError:
@@ -337,7 +345,7 @@ class RolesChecker:
                 raise AuthorizationError("Не удалось авторизоваться")
             
             # Проверяем роли на каждом сервере
-            self._process_servers(server_urls, usernames, check_profiles)
+            self._process_servers(server_urls, usernames, check_profiles, profile_data)
         
         finally:
             self._cleanup_resources(profile_data)
@@ -542,7 +550,7 @@ class RolesChecker:
                 usernames.append(username)
         return usernames
     
-    def _process_servers(self, server_urls: List[str], usernames: List[str], check_profiles: List[Dict]):
+    def _process_servers(self, server_urls: List[str], usernames: List[str], check_profiles: List[Dict], profile_data: Dict):
         """
         Обработка проверки ролей на всех серверах
         
@@ -550,6 +558,7 @@ class RolesChecker:
             server_urls: Список URL серверов для проверки
             usernames: Список username для проверки
             check_profiles: Список профилей для сохранения результатов
+            profile_data: Данные профиля, который выполняет проверку (для serial_number)
         
         Raises:
             BrowserError: При критической ошибке браузера
@@ -582,7 +591,7 @@ class RolesChecker:
                 
                 # Сохраняем результаты, даже если они пустые (для логирования)
                 # check_roles_for_users всегда возвращает dict, никогда None
-                self._save_results_to_sheet(results, check_profiles)
+                self._save_results_to_sheet(results, check_profiles, profile_data)
                 processed_count += 1
                     
             except BrowserError as e:
@@ -602,13 +611,14 @@ class RolesChecker:
         
         logger.info(f"Обработка серверов завершена: обработано {processed_count}, ошибок {failed_count}")
     
-    def _save_results_to_sheet(self, results: Dict[str, List[str]], check_profiles: List[Dict]):
+    def _save_results_to_sheet(self, results: Dict[str, List[str]], check_profiles: List[Dict], profile_data: Dict):
         """
         Сохранение результатов проверки в таблицу
         
         Args:
             results: Словарь {username: [список ролей]}
             check_profiles: Список профилей для сохранения
+            profile_data: Данные профиля, который выполнял проверку (для serial_number)
         """
         if not results or not isinstance(results, dict):
             logger.debug("Нет результатов для сохранения")
@@ -617,6 +627,9 @@ class RolesChecker:
         if not check_profiles:
             logger.warning("Список профилей для сохранения пуст")
             return
+        
+        # Получаем serial_number профиля, который выполнял проверку
+        checker_serial_number = profile_data.get('serial_number', '').strip() if profile_data else ''
         
         saved_count = 0
         failed_count = 0
@@ -634,6 +647,9 @@ class RolesChecker:
             
             # Находим соответствующий профиль для сохранения
             profile_to_save = self._find_profile_for_username(check_profiles, username)
+            
+            # Используем serial_number профиля, который выполнял проверку
+            profile_to_save['serial_number'] = checker_serial_number
             
             try:
                 self.sheets_client.save_check_result(profile_to_save, result_data)

@@ -246,6 +246,9 @@ class CheckWorker:
             logger.warning("Список профилей для сохранения пуст")
             return
         
+        # Получаем serial_number профиля, который выполнял проверку
+        checker_serial_number = self.profile_data.get('serial_number', '').strip()
+        
         saved_count = 0
         failed_count = 0
         skipped_count = 0
@@ -263,6 +266,9 @@ class CheckWorker:
                 (p for p in check_profiles if p.get('username', '').strip() == username),
                 {'username': username}
             )
+            
+            # Используем serial_number профиля, который выполнял проверку
+            profile_to_save['serial_number'] = checker_serial_number
             
             try:
                 self.sheets_client.save_check_result(profile_to_save, result_data)

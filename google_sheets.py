@@ -201,41 +201,98 @@ class GoogleSheetsClient:
             logger.error(f"Ошибка получения ссылок: {e}")
             raise GoogleSheetsError(f"Не удалось получить ссылки на Discord каналы: {e}") from e
     
-    def get_check_profiles(self) -> List[Dict]:
+    def get_usernames_from_ds_data(self) -> List[str]:
         """
-        Получение списка профилей для проверки из листа чек-отработка
+        Получение списка никнеймов для проверки из листа ds_data
         
         Returns:
-            Список словарей с данными профилей для проверки
+            Список username для проверки
         
         Raises:
             GoogleSheetsError: При ошибке чтения из Google Sheets
         """
         try:
-            data = self.read_range(config.GOOGLE_SHEET_CHECK)
+            data = self.read_range(config.GOOGLE_SHEET_DS_DATA)
             if not data or len(data) < 2:
-                logger.warning(f"Лист {config.GOOGLE_SHEET_CHECK} пуст или содержит только заголовки")
+                logger.warning(f"Лист {config.GOOGLE_SHEET_DS_DATA} пуст или содержит только заголовки")
+                return []
+            
+            headers = data[0]
+            usernames = []
+            
+            # Ищем индекс столбца username
+            username_index = None
+            for i, header in enumerate(headers):
+                if header.strip().lower() == 'username':
+                    username_index = i
+                    break
+            
+            if username_index is None:
+                logger.warning("Столбец 'username' не найден в листе ds_data")
+                return []
+            
+            # Извлекаем username из всех строк (кроме заголовка)
+            for row_index, row in enumerate(data[1:], start=2):
+                if not row or len(row) <= username_index:
+                    continue
+                
+                username = row[username_index]
+                if username and isinstance(username, str):
+                    username = username.strip()
+                    if username:
+                        usernames.append(username)
+            
+            logger.debug(f"Получено {len(usernames)} никнеймов из ds_data для проверки")
+            return usernames
+        except GoogleSheetsError:
+            raise
+        except Exception as e:
+            logger.error(f"Ошибка получения никнеймов из ds_data: {e}")
+            raise GoogleSheetsError(f"Не удалось получить никнеймы из ds_data: {e}") from e
+    
+    def get_check_profiles_from_ds_data(self) -> List[Dict]:
+        """
+        Получение списка профилей для сохранения результатов из листа ds_data
+        
+        Создает список профилей с username и serial_number из ds_data
+        для использования при сохранении результатов в чек-отработка.
+        
+        Returns:
+            Список словарей с данными профилей (username, serial_number)
+        
+        Raises:
+            GoogleSheetsError: При ошибке чтения из Google Sheets
+        """
+        try:
+            data = self.read_range(config.GOOGLE_SHEET_DS_DATA)
+            if not data or len(data) < 2:
+                logger.warning(f"Лист {config.GOOGLE_SHEET_DS_DATA} пуст или содержит только заголовки")
                 return []
             
             headers = data[0]
             profiles = []
             
             for row in data[1:]:
-                if not row or not any(row):  # Пропускаем пустые строки
+                if not row or not any(row):
                     continue
                 
                 profile = self.parse_row_to_dict(headers, row)
                 if profile:
-                    profiles.append(profile)
+                    # Создаем профиль только с username и serial_number для сохранения
+                    username = profile.get('username', '').strip()
+                    if username:  # Только если есть username
+                        profiles.append({
+                            'username': username,
+                            'serial_number': profile.get('serial_number', '').strip()
+                        })
             
-            logger.debug(f"Получено {len(profiles)} профилей для проверки")
+            logger.debug(f"Получено {len(profiles)} профилей из ds_data для сохранения результатов")
             return profiles
         except GoogleSheetsError:
-            # Пробрасываем GoogleSheetsError как есть
             raise
         except Exception as e:
-            logger.error(f"Ошибка получения профилей для проверки: {e}")
-            raise GoogleSheetsError(f"Не удалось получить профили для проверки: {e}") from e
+            logger.error(f"Ошибка получения профилей из ds_data: {e}")
+            raise GoogleSheetsError(f"Не удалось получить профили из ds_data: {e}") from e
     
     def save_check_result(self, profile_data: Dict, result: Dict):
         """
